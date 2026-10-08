@@ -1,0 +1,99 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+      POSTGRES_DB: tickets_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: ticket_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PYTHONPATH=/app
+    volumes:
+      -  .:/app
+      - ./src:/app/src
+      - ./migrations:/app/migrations
+      - ./alembic.ini:/app/alembic.ini
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  celery_worker:
+    build: .
+    container_name: ticket_celery_worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition:
+          service_healthy
+    environment:
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - PYTHONPATH=/app
+    volumes:
+      - ./src:/app/src
+    command: celery -A src.tasks.celery_app worker --loglevel=info --concurrency=2
+
+  celery-beat:
+    build: .
+    container_name: ticket_celery_beat
+    depends_on:
+      - redis
+      - celery_worker
+    environment:
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
+      - PYTHONPATH=/app
+    volumes:
+      - ./src:/app/src
+      - beat_data:/app/beat
+    command: celery -A src.tasks.celery_app beat --loglevel=info --schedule=/app/beat/celerybeat-schedule
+
+  flower:
+    build: .
+    container_name: ticket_flower
+    depends_on:
+      - redis
+      - celery_worker
+    environment:
+      - REDIS_HOST=redis
+      - PYTHONPATH=/app
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./src:/app/src
+    command: celery -A src.tasks.celery_app flower --port=5555 --basic_auth=admin:admin
+
+volumes:
+  postgres_data:
+  beat_data:
+
