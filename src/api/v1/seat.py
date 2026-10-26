@@ -36,6 +36,8 @@ async def get_hall_seats(
         for seat in result.scalars().all()
     ]
 
+    if not seats_data:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f'Зал {hall_id} не найден')
     await CacheService.set_hall_seats(hall_id, seats_data)
     return seats_data
 
