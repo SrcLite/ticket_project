@@ -93,6 +93,26 @@ services:
       - ./src:/app/src
     command: celery -A src.tasks.celery_app flower --port=5555 --basic_auth=admin:admin
 
+  tests:
+    build: {context: ., dockerfile: Dockerfile.test}
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    environment:
+      - DB_HOST=postgres
+      - DB_NAME=tickets_test
+      - REDIS_HOST=redis
+      - REDIS_DB=2
+      - SECRET_KEY=test-secret-key-not-for-production
+      - PYTHONPATH=/app
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./migrations:/app/migrations
+      - ./alembic.ini:/app/alembic.ini
+      - ./pyproject.toml:/app/pyproject.toml
+      - ./requirements-dev.txt:/app/requirements-dev.txt
+    command: sh -c "alembic upgrade head && pytest"
 volumes:
   postgres_data:
   beat_data:
