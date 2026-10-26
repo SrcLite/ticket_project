@@ -44,9 +44,17 @@ async def register(
         role="user",
     )
     db.add(user)
-    await db.commit()
-    await db.refresh(user)
 
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email уже зарегистрирован"
+        )
+    
+    await db.refresh(user)
     logger.info(f"User registered: {user.email}")
     return user
 
